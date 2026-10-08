@@ -1,0 +1,197 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033{\fonttbl{\f0\fnil\fcharset0 Calibri;}}
+{\*\generator Riched20 10.0.19041}\viewkind4\uc1 
+\pard\sa200\sl276\slmult1\f0\fs22\lang9 from __future__ import division\par
+import warnings \par
+ def distance_euclidean(instance1, instance2):\par
+ """Computes the distance between two instances. Instances should be tuples of\par
+equal length.\par
+ Returns: Euclidean distance\par
+ Signature: ((attr_1_1, attr_1_2, ...), (attr_2_1, attr_2_2, ...)) -> float"""\par
+ def detect_value_type(attribute):\par
+ """Detects the value type (number or non-number).\par
+ Returns: (value type, value casted as detected type)\par
+ Signature: value -> (str or float type, str or float value)"""\par
+ from numbers import Number\par
+ attribute_type = None\par
+ if isinstance(attribute, Number):\par
+ attribute_type = float\par
+ attribute = float(attribute)\par
+ else:\par
+ attribute_type = str\par
+ attribute = str(attribute)\par
+ return attribute_type, attribute\par
+ # check if instances are of same length\par
+ if len(instance1) != len(instance2):\par
+ raise AttributeError("Instances have different number of arguments.")\par
+ # init differences vector\par
+ differences = [0] * len(instance1)\par
+ # compute difference for each attribute and store it to differences vector\par
+ for i, (attr1, attr2) in enumerate(zip(instance1, instance2)):\par
+ type1, attr1 = detect_value_type(attr1)\par
+ type2, attr2 = detect_value_type(attr2)\par
+ # raise error is attributes are not of same data type.\par
+ if type1 != type2:\par
+ raise AttributeError("Instances have different data types.")\par
+ if type1 is float:\par
+ # compute difference for float\par
+ differences[i] = attr1 - attr2\par
+ else:\par
+ # compute difference for string\par
+ if attr1 == attr2:\par
+ differences[i] = 0\par
+ else:\par
+ differences[i] = 1\par
+ # compute RMSE (root mean squared error)\par
+rmse = (sum(map(lambda x: x**2, differences)) / len(differences))**0.5\par
+ return rmse \par
+class LOF:\par
+ """Helper class for performing LOF computations and instances\par
+normalization."""\par
+ def __init__(self, instances, normalize=True,\par
+distance_function=distance_euclidean):\par
+ self.instances = instances\par
+ self.normalize = normalize\par
+ self.distance_function = distance_function\par
+ if normalize:\par
+ self.normalize_instances() \par
+ def compute_instance_attribute_bounds(self):\par
+ min_values = [float("inf")] * len(self.instances[0])\par
+#n.ones(len(self.instances[0])) * n.inf\par
+ max_values = [float("-inf")] * len(self.instances[0])\par
+#n.ones(len(self.instances[0])) * -1 * n.inf\par
+ for instance, in self.instances:\par
+ min_values = tuple(map(lambda x,y: min(x,y), min_values,instance))\par
+#n.minimum(min_values, instance)\par
+ max_values = tuple(map(lambda x,y: max(x,y), max_values,instance))\par
+#n.maximum(max_values, instance) \par
+ diff = [dim_max - dim_min for dim_max, dim_min in zip(max_values,\par
+min_values)]\par
+ if not all(diff):\par
+ problematic_dimensions = ", ".join(str(i+1) for i, v in\par
+enumerate(diff) if v == 0)\par
+ warnings.warn("No data variation in dimensions: %s. You should check\par
+your data or disable normalization." % problematic_dimensions) \par
+ self.max_attribute_values = max_values\par
+ self.min_attribute_values = min_values \par
+ def normalize_instances(self):\par
+ """Normalizes the instances and stores the infromation for rescaling new\par
+instances."""\par
+ if not hasattr(self, "max_attribute_values"):\par
+ self.compute_instance_attribute_bounds()\par
+ new_instances = []\par
+ for instance, in self.instances:\par
+ new_instances.append(self.normalize_instance(instance)) # (instance -\par
+min_values) / (max_values - min_values)\par
+ self.instances = new_instances \par
+ def normalize_instance(self, instance):\par
+return tuple(map(lambda value,max,min: (value-min)/(max-min) if max-min >\par
+0 else 0,\par
+ instance, self.max_attribute_values,\par
+self.min_attribute_values))\par
+ def local_outlier_factor(self, min_pts, instance):\par
+ """The (local) outlier factor of instance captures the degree to which we\par
+call instance an outlier.\par
+ min_pts is a parameter that is specifying a minimum number of instances\par
+to consider for computing LOF value.\par
+ Returns: local outlier factor\par
+ Signature: (int, (attr1, attr2, ...), ((attr_1_1, ...),(attr_2_1, ...),\par
+...)) -> float"""\par
+ if self.normalize:\par
+ instance = self.normalize_instance(instance)\par
+ return local_outlier_factor(min_pts, instance, self.instances,\par
+distance_function=self.distance_function) \par
+def k_distance(k, instance, instances, distance_function=distance_euclidean):\par
+ #TODO: implement caching\par
+ """Computes the k-distance of instance as defined in paper. It also gatheres\par
+the set of k-distance neighbours.\par
+ Returns: (k-distance, k-distance neighbours)\par
+ Signature: (int, (attr1, attr2, ...), ((attr_1_1, ...),(attr_2_1, ...), ...))\par
+-> (float, ((attr_j_1, ...),(attr_k_1, ...), ...))"""\par
+ distances = \{\}\par
+ for instance2 in instances:\par
+ distance_value = distance_function(instance, instance2)\par
+ if distance_value in distances:\par
+ distances[distance_value].append(instance2)\par
+ else:\par
+ distances[distance_value] = [instance2]\par
+ distances = sorted(distances.items())\par
+ neighbours = []\par
+ [neighbours.extend(n[1]) for n in distances[:k]]\par
+ k_distance_value = distances[k - 1][0] if len(distances) >= k else\par
+distances[-1][0]\par
+ return k_distance_value, neighbours \par
+def reachability_distance(k, instance1, instance2, instances,\par
+distance_function=distance_euclidean):\par
+ """The reachability distance of instance1 with respect to instance2.\par
+ Returns: reachability distance\par
+ Signature: (int, (attr_1_1, ...),(attr_2_1, ...)) -> float"""\par
+ (k_distance_value, neighbours) = k_distance(k, instance2, instances,\par
+distance_function=distance_function)\par
+\par
+return max([k_distance_value, distance_function(instance1, instance2)]) \par
+def local_reachability_density(min_pts, instance, instances, **kwargs):\par
+ """Local reachability density of instance is the inverse of the average\par
+reachability\par
+ distance based on the min_pts-nearest neighbors of instance.\par
+ Returns: local reachability density\par
+ Signature: (int, (attr1, attr2, ...), ((attr_1_1, ...),(attr_2_1, ...), ...))\par
+-> float"""\par
+ (k_distance_value, neighbours) = k_distance(min_pts, instance, instances,\par
+**kwargs)\par
+ reachability_distances_array = [0]*len(neighbours) #n.zeros(len(neighbours))\par
+ for i, neighbour in enumerate(neighbours):\par
+ reachability_distances_array[i] = reachability_distance(min_pts,\par
+instance, neighbour, instances, **kwargs)\par
+ if not any(reachability_distances_array):\par
+ warnings.warn("Instance %s (could be normalized) is identical to all the\par
+neighbors. Setting local reachability density to inf." % repr(instance))\par
+ return float("inf")\par
+ else:\par
+ return len(neighbours) / sum(reachability_distances_array) \par
+def local_outlier_factor(min_pts, instance, instances, **kwargs):\par
+ """The (local) outlier factor of instance captures the degree to which we\par
+call instance an outlier.\par
+ min_pts is a parameter that is specifying a minimum number of instances to\par
+consider for computing LOF value.\par
+ Returns: local outlier factor\par
+ Signature: (int, (attr1, attr2, ...), ((attr_1_1, ...),(attr_2_1, ...), ...))\par
+-> float"""\par
+ (k_distance_value, neighbours) = k_distance(min_pts, instance, instances,\par
+**kwargs)\par
+ instance_lrd = local_reachability_density(min_pts, instance, instances,\par
+**kwargs)\par
+ lrd_ratios_array = [0]* len(neighbours)\par
+ for i, neighbour in enumerate(neighbours):\par
+ instances_without_instance = set(instances)\par
+ instances_without_instance.discard(neighbour)\par
+ neighbour_lrd = local_reachability_density(min_pts, neighbour,\par
+instances_without_instance, **kwargs)\par
+ lrd_ratios_array[i] = neighbour_lrd / instance_lrd\par
+ return sum(lrd_ratios_array) / len(neighbours) \par
+def outliers(k, instances, **kwargs):\par
+ """Simple procedure to identify outliers in the dataset."""\par
+ instances_value_backup = instances\par
+outliers = []\par
+ for i, instance in enumerate(instances_value_backup):\par
+ instances = list(instances_value_backup)\par
+ instances.remove(instance)\par
+ l = LOF(instances, **kwargs)\par
+ value = l.local_outlier_factor(k, instance)\par
+ if value > 1:\par
+ outliers.append(\{"lof": value, "instance": instance, "index": i\})\par
+ outliers.sort(key=lambda o: o["lof"], reverse=True)\par
+ return outliers\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+}
+ 
